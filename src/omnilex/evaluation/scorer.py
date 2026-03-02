@@ -97,7 +97,9 @@ class Scorer:
             return []
 
         raw_citations = [
-            c.strip() for c in citation_string.split(self.citation_separator) if c.strip()
+            c.strip()
+            for c in citation_string.split(self.citation_separator)
+            if c.strip()
         ]
 
         return self.normalizer.canonicalize_list(raw_citations)
@@ -131,20 +133,27 @@ class Scorer:
         # Check for missing queries
         missing_in_submission = merged[merged["_merge"] == "right_only"]["query_id"]
         if len(missing_in_submission) > 0:
-            raise ValueError(f"Submission missing queries: {missing_in_submission.tolist()}")
+            raise ValueError(
+                f"Submission missing queries: {missing_in_submission.tolist()}"
+            )
 
         extra_in_submission = merged[merged["_merge"] == "left_only"]["query_id"]
         if len(extra_in_submission) > 0:
-            print(f"Warning: Submission has extra queries: {extra_in_submission.tolist()}")
+            print(
+                f"Warning: Submission has extra queries: {extra_in_submission.tolist()}"
+            )
 
         # Filter to only matched queries
         merged = merged[merged["_merge"] == "both"]
 
         # Parse citations
         predictions = [
-            self.parse_citations(row["predicted_citations"]) for _, row in merged.iterrows()
+            self.parse_citations(row["predicted_citations"])
+            for _, row in merged.iterrows()
         ]
-        gold = [self.parse_citations(row["gold_citations"]) for _, row in merged.iterrows()]
+        gold = [
+            self.parse_citations(row["gold_citations"]) for _, row in merged.iterrows()
+        ]
 
         # Compute metrics
         macro_scores = macro_f1(predictions, gold)
@@ -188,9 +197,13 @@ def evaluate_submission(
 
     # Parse citations
     predictions = [
-        scorer.parse_citations(row.get("predicted_citations", "")) for _, row in merged.iterrows()
+        scorer.parse_citations(row.get("predicted_citations", ""))
+        for _, row in merged.iterrows()
     ]
-    gold = [scorer.parse_citations(row.get("gold_citations", "")) for _, row in merged.iterrows()]
+    gold = [
+        scorer.parse_citations(row.get("gold_citations", ""))
+        for _, row in merged.iterrows()
+    ]
 
     # Compute all scores
     all_scores = {}

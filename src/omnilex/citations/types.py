@@ -8,7 +8,9 @@ class CitationType(Enum):
     """Types of Swiss legal citations."""
 
     FEDERAL_LAW = "federal_law"  # SR citations (e.g., SR 210)
-    COURT_DECISION = "court_decision"  # Court citations (e.g., BGE 116 Ia 56, 5A_800/2019 E. 2)
+    COURT_DECISION = (
+        "court_decision"  # Court citations (e.g., BGE 116 Ia 56, 5A_800/2019 E. 2)
+    )
     ORDINANCE = "ordinance"  # Verordnung
     TREATY = "treaty"  # International treaties
     UNKNOWN = "unknown"

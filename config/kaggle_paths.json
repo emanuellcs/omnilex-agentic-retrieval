@@ -1,0 +1,11 @@
+{
+  "data_dataset": "/kaggle/input/omnilex-data",
+  "indices_dataset": "/kaggle/input/omnilex-indices",
+  "models_dataset": "/kaggle/input/omnilex-models",
+  "output_path": "/kaggle/working",
+  "laws_csv": "laws_de.csv",
+  "courts_csv": "court_considerations.csv",
+  "train_csv": "train.csv",
+  "val_csv": "val.csv",
+  "test_csv": "test.csv"
+}

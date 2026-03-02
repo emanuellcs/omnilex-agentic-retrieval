@@ -234,7 +234,9 @@ def download_lexam(output_dir: Path, filter_by_corpus: bool = False) -> None:
         # Save as single train.csv
         csv_path = lexam_dir / "train.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=["query_id", "query", "gold_citations"])
+            writer = csv.DictWriter(
+                f, fieldnames=["query_id", "query", "gold_citations"]
+            )
             writer.writeheader()
             for item in all_with_citations:
                 writer.writerow(
@@ -314,14 +316,18 @@ def create_sample_data(output_dir: Path) -> None:
         writer.writerows(SAMPLE_TEST_QUERIES)
 
     # Write sample_submission.csv (also to data/ root)
-    with open(samples_dir / "sample_submission.csv", "w", newline="", encoding="utf-8") as f:
+    with open(
+        samples_dir / "sample_submission.csv", "w", newline="", encoding="utf-8"
+    ) as f:
         writer = csv.DictWriter(f, fieldnames=["query_id", "predicted_citations"])
         writer.writeheader()
         writer.writerows(SAMPLE_SUBMISSION)
 
     # Also write to data/ root
     data_root = output_dir.parent
-    with open(data_root / "sample_submission.csv", "w", newline="", encoding="utf-8") as f:
+    with open(
+        data_root / "sample_submission.csv", "w", newline="", encoding="utf-8"
+    ) as f:
         writer = csv.DictWriter(f, fieldnames=["query_id", "predicted_citations"])
         writer.writeheader()
         writer.writerows(SAMPLE_SUBMISSION)
@@ -339,7 +345,9 @@ def create_sample_data(output_dir: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download competition data from HuggingFace")
+    parser = argparse.ArgumentParser(
+        description="Download competition data from HuggingFace"
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,

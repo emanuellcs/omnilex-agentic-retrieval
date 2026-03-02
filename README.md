@@ -1,90 +1,94 @@
-# Omnilex Agentic Retrieval Competition Starter Repo
+# Omnilex: Advanced Agentic Legal Retrieval for Swiss Law
 
-Official starter repo for Kaggle competiton https://www.kaggle.com/competitions/llm-agentic-legal-information-retrieval/host/launch-checklist
+Project for the Kaggle LLM Agentic Legal Information Retrieval competition. This project implements a sophisticated, multi-stage hybrid retrieval pipeline designed to handle complex English legal queries and retrieve exact canonical citations from Swiss federal law and court decision corpora.
 
-## Quick Start
+## Key Features
 
-### Installation
+- **Multi-Stage Hybrid Retrieval**: Combines BM25 (lexical) and Dense (semantic) search with Cross-Encoder reranking.
+- **Structural Priors**: Leverages 30 years of Swiss Federal Court co-occurrence data via a Citation Graph.
+- **Adversarial LLM Debate**: Uses a three-agent debate mechanism (Gemini API) to maximize F1 score by disambiguating complex cases.
+- **Hard Grounding**: Ensures 100% validity of output citations via strict corpus validation.
+- **Kaggle Optimized**: Fully supports offline inference with memory-efficient chunked loading for large corpora (2.5M+ rows).
 
-(Tested with Ubuntu-24.04 in WSL)
+## 🛠 Project Structure
+
+```
+├── src/omnilex/           # Core Package
+│   ├── retrieval/         # Search engines (BM25, Dense), Reranker, Graph, Translator
+│   ├── pipeline/          # Orchestrators (Hybrid & Creative pipelines)
+│   ├── citations/         # Swiss-specific citation normalizer and abbreviations
+│   ├── evaluation/        # Macro F1 and secondary retrieval metrics
+│   └── llm/               # Model loading and prompting utilities
+├── notebooks/             # Implementation & Analysis
+│   ├── 03_hybrid_dense_retrieval.ipynb  # Primary Kaggle Submission
+│   ├── 04_creative_debate_pipeline.ipynb # Creative Prize Submission (Gemini)
+│   └── 05_citation_graph_analysis.ipynb  # Structural Exploratory Analysis
+├── utils/                 # Offline Build & Tuning Scripts
+├── tests/                 # Comprehensive Unit Test Suite
+└── config/                # Pipeline and Path Configurations
+```
+
+## 🚀 Getting Started
+
+### 1. Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/Omnilex-AI/Omnilex-Agentic-Retrieval-Competition.git
-cd Omnilex-Agentic-Retrieval-Competition
-
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
-
-# Install dependencies
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt  # for testing/linting
-
-# Install package in development mode
 pip install -e .
 ```
 
-### Download Data
+### 2. Prepare Data
 
-Get it from Kaggle into `data` directory
+Organize the competition data into `data/raw/`:
+- `laws_de.csv`
+- `court_considerations.csv`
+- `val.csv`
+- `test.csv`
+- `train.csv`
+- `sample_submission`
 
-### Run Baselines
+### 3. Build Offline Indices
 
-Two baseline notebooks are provided:
-
-1. **Direct Generation** (`notebooks/01_direct_generation_baseline.ipynb`)
-   - Prompts LLM to directly generate citations
-   - Simple but prone to hallucination
-
-2. **Agentic Retrieval** (`notebooks/02_agentic_retrieval_baseline.ipynb`)
-   - Uses ReAct-style agent with search tools
-   - Grounded in actual legal documents
-
-Both notebooks work in VSCode and can be submitted to Kaggle.
-
-### Validate Submission
+Run the build scripts to generate searchable indices and the citation graph:
 
 ```bash
-python scripts/validate_submission.py submission.csv
+# 1. BM25 Indices
+python utils/build_bm25_indices.py --laws-csv data/raw/laws_de.csv --courts-csv data/raw/court_considerations.csv
+
+# 2. Dense FAISS Indices (requires ~2GB VRAM or CPU)
+python utils/build_faiss_indices.py --laws-csv data/raw/laws_de.csv --courts-csv data/raw/court_considerations.csv
+
+# 3. Citation Co-occurrence Graph
+python utils/build_citation_graph.py --courts-csv data/raw/court_considerations.csv
 ```
 
-## Data Format
+## 🤖 Retrieval Pipelines
 
-See Kaggle
+### Primary Pipeline (Offline)
+Located in `notebooks/03_hybrid_dense_retrieval.ipynb`. It uses:
+1. **Query Translation**: English --> German (MarianMT).
+2. **Retrieval**: BM25 + Multilingual-E5-Large.
+3. **Fusion**: Reciprocal Rank Fusion (RRF).
+4. **Graph Expansion**: Personalized PageRank expansion.
+5. **Reranking**: Cross-Encoder (mMiniLMv2).
+6. **Selection**: F1-optimized thresholding.
 
-## Project Structure
+### Creative Pipeline (Gemini API)
+Located in `notebooks/04_creative_debate_pipeline.ipynb`. It replaces the thresholding stage with a **Three-Agent Adversarial Debate** powered by Gemini 3.0 Flash Preview via the `google-genai` SDK:
+- **Advocate**: Argues for inclusion.
+- **Devil's Advocate**: Argues for exclusion.
+- **Arbiter**: Makes the final binary decision based on the debate, calibrated for Swiss law school standards (omission penalty vs. over-inclusion penalty).
 
+## 🧪 Testing
+
+Run the full test suite to verify module integrity:
+
+```bash
+pytest tests/ -v
 ```
-├── src/omnilex/           # Core library
-│   ├── citations/         # Citation parsing & normalization
-│   ├── evaluation/        # Metrics & scoring
-│   ├── retrieval/         # BM25 search & tools
-│   └── llm/               # LLM loading & prompts
-├── notebooks/             # Baseline notebooks
-├── utils/                 # Data & utility scripts
-├── tests/                 # Test suite
-└── data/                  # Data directory
-```
 
-## Requirements
+## 📜 License
 
-- Python >= 3.10
-- llama-cpp-python (for local LLM inference)
-- rank-bm25 (for keyword search)
-- pandas, numpy, scikit-learn
-
-For Kaggle submissions, you may need to (depending on your solution):
-
-1. Upload your GGUF model as a Kaggle dataset
-2. Upload pre-built indices as a Kaggle dataset
-3. Package the `omnilex` library
-
-## License
-
-Apache 2.0 - See [LICENSE](LICENSE)
-
-## Contact
-
-For public questions about the competition please use the "Discussion" tab or open an issue on this repository. For private questions reahc out to host on Kaggle or ari.jordan@omnilex.ai
+Apache 2.0. See [LICENSE](LICENSE) for details.

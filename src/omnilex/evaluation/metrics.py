@@ -63,7 +63,9 @@ def macro_f1(
         Dictionary with macro precision, recall, and F1
     """
     if len(predictions) != len(gold):
-        raise ValueError(f"Length mismatch: {len(predictions)} predictions vs {len(gold)} gold")
+        raise ValueError(
+            f"Length mismatch: {len(predictions)} predictions vs {len(gold)} gold"
+        )
 
     if len(predictions) == 0:
         return {"macro_precision": 0.0, "macro_recall": 0.0, "macro_f1": 0.0}
@@ -100,7 +102,9 @@ def micro_f1(
         Dictionary with micro precision, recall, and F1
     """
     if len(predictions) != len(gold):
-        raise ValueError(f"Length mismatch: {len(predictions)} predictions vs {len(gold)} gold")
+        raise ValueError(
+            f"Length mismatch: {len(predictions)} predictions vs {len(gold)} gold"
+        )
 
     total_tp = 0
     total_fp = 0

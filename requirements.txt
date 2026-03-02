@@ -9,6 +9,14 @@ llama-cpp-python>=0.2.0
 
 # Retrieval
 rank-bm25>=0.2.2
+faiss-cpu>=1.7.4
+sentence-transformers>=2.7.0
+transformers>=4.40.0
+torch>=2.0.0
+networkx>=3.0
+
+# API (for creative pipeline)
+google-genai>=0.1.0
 
 # Data
 datasets>=2.14.0

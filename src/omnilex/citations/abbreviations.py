@@ -11,7 +11,9 @@ from functools import lru_cache
 from pathlib import Path
 
 # Path to abbreviations JSON file
-ABBREV_FILE = Path(__file__).parent.parent.parent.parent / "utils" / "abbrev-translations.json"
+ABBREV_FILE = (
+    Path(__file__).parent.parent.parent.parent / "utils" / "abbrev-translations.json"
+)
 
 
 @lru_cache(maxsize=1)

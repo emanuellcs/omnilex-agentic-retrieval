@@ -35,6 +35,7 @@ DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 
 class ParticipantVisibleError(Exception):
     """Errors raised with this type will be shown to participants."""
+
     pass
 
 
@@ -48,7 +49,9 @@ def _canonicalize_citation(c: str) -> str:
     return c
 
 
-def _parse_citation_field(value: object, sep: str, max_items: int, max_chars: int) -> Set[str]:
+def _parse_citation_field(
+    value: object, sep: str, max_items: int, max_chars: int
+) -> Set[str]:
     """
     Parse a semicolon-separated citation string into a canonicalized set.
     """
@@ -120,9 +123,13 @@ def score(
 
     # Basic structural checks
     if row_id_column_name not in solution.columns:
-        raise ParticipantVisibleError(f"Solution is missing id column '{row_id_column_name}'.")
+        raise ParticipantVisibleError(
+            f"Solution is missing id column '{row_id_column_name}'."
+        )
     if row_id_column_name not in submission.columns:
-        raise ParticipantVisibleError(f"Submission is missing id column '{row_id_column_name}'.")
+        raise ParticipantVisibleError(
+            f"Submission is missing id column '{row_id_column_name}'."
+        )
 
     # Align submission to solution by row_id
     solution = solution.set_index(row_id_column_name)
@@ -165,12 +172,18 @@ def score(
     pred_series = submission[pred_col]
 
     if len(gold_series) != len(pred_series):
-        raise ParticipantVisibleError("Solution and submission have different number of rows after alignment.")
+        raise ParticipantVisibleError(
+            "Solution and submission have different number of rows after alignment."
+        )
 
     f1s: List[float] = []
     for g, p in zip(gold_series.tolist(), pred_series.tolist()):
-        gold_set = _parse_citation_field(g, citation_separator, max_citations_per_row, max_chars_per_row)
-        pred_set = _parse_citation_field(p, citation_separator, max_citations_per_row, max_chars_per_row)
+        gold_set = _parse_citation_field(
+            g, citation_separator, max_citations_per_row, max_chars_per_row
+        )
+        pred_set = _parse_citation_field(
+            p, citation_separator, max_citations_per_row, max_chars_per_row
+        )
         f1s.append(_f1_for_sets(pred_set, gold_set))
 
     if not f1s:
@@ -180,7 +193,9 @@ def score(
 
     # Must be finite, non-null
     if not math.isfinite(result):
-        raise ParticipantVisibleError("Score is not finite. Please check submission format.")
+        raise ParticipantVisibleError(
+            "Score is not finite. Please check submission format."
+        )
     return result
 
 
@@ -201,42 +216,39 @@ Examples:
 
     # Verbose mode
     python scripts/evaluate_submission.py submission.csv -v
-        """
+        """,
     )
-    parser.add_argument(
-        "submission",
-        type=Path,
-        help="Path to the submission CSV file"
-    )
+    parser.add_argument("submission", type=Path, help="Path to the submission CSV file")
     parser.add_argument(
         "--split",
         type=str,
         choices=["train", "val"],
         default="val",
-        help="Which data split to evaluate against: 'train' or 'val' (default: val)"
+        help="Which data split to evaluate against: 'train' or 'val' (default: val)",
     )
     parser.add_argument(
-        "--solution", "-s",
+        "--solution",
+        "-s",
         type=Path,
         dest="solution_path",
-        help="Path to a custom solution CSV file (overrides --split)"
+        help="Path to a custom solution CSV file (overrides --split)",
     )
     parser.add_argument(
-        "--row-id", "-r",
+        "--row-id",
+        "-r",
         type=str,
         default="query_id",
-        help="Name of the row ID column (default: query_id)"
+        help="Name of the row ID column (default: query_id)",
     )
     parser.add_argument(
-        "--separator", "-sep",
+        "--separator",
+        "-sep",
         type=str,
         default=";",
-        help="Citation separator character (default: ;)"
+        help="Citation separator character (default: ;)",
     )
     parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Print per-query F1 scores"
+        "--verbose", "-v", action="store_true", help="Print per-query F1 scores"
     )
 
     args = parser.parse_args()
@@ -297,10 +309,16 @@ Examples:
                 gold_col = solution_df.columns[0]
 
             for idx in solution_df.index:
-                gold_set = _parse_citation_field(solution_df.loc[idx, gold_col], args.separator, 200, 10_000)
-                pred_set = _parse_citation_field(submission_df.loc[idx, pred_col], args.separator, 200, 10_000)
+                gold_set = _parse_citation_field(
+                    solution_df.loc[idx, gold_col], args.separator, 200, 10_000
+                )
+                pred_set = _parse_citation_field(
+                    submission_df.loc[idx, pred_col], args.separator, 200, 10_000
+                )
                 f1 = _f1_for_sets(pred_set, gold_set)
-                print(f"  {idx}: F1={f1:.4f} (pred={len(pred_set)}, gold={len(gold_set)})")
+                print(
+                    f"  {idx}: F1={f1:.4f} (pred={len(pred_set)}, gold={len(gold_set)})"
+                )
 
     except ParticipantVisibleError as e:
         print(f"Validation Error: {e}", file=sys.stderr)

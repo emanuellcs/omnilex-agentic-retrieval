@@ -97,7 +97,9 @@ def temp_submission_file():
     """Create a temporary submission file for testing."""
     import csv
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", delete=False, newline=""
+    ) as f:
         writer = csv.DictWriter(f, fieldnames=["query_id", "predicted_citations"])
         writer.writeheader()
         writer.writerow(
@@ -125,7 +127,9 @@ def temp_gold_file():
     """Create a temporary gold file for testing."""
     import csv
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", delete=False, newline=""
+    ) as f:
         writer = csv.DictWriter(f, fieldnames=["query_id", "gold_citations"])
         writer.writeheader()
         writer.writerow(

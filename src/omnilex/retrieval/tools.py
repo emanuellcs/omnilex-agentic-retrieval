@@ -90,7 +90,9 @@ Example queries: "contract formation requirements", "Vertragsabschluss", "divorc
         Returns:
             List of citation strings from the most recent search
         """
-        return [doc.get("citation", "") for doc in self._last_results if doc.get("citation")]
+        return [
+            doc.get("citation", "") for doc in self._last_results if doc.get("citation")
+        ]
 
     def search_with_metadata(self, query: str) -> list[dict]:
         """Execute search and return full result objects.
@@ -187,7 +189,9 @@ Example queries: "negligence standard of care", "Sorgfaltspflicht", "contract in
         Returns:
             List of citation strings from the most recent search
         """
-        return [doc.get("citation", "") for doc in self._last_results if doc.get("citation")]
+        return [
+            doc.get("citation", "") for doc in self._last_results if doc.get("citation")
+        ]
 
     def search_with_metadata(self, query: str) -> list[dict]:
         """Execute search and return full result objects.

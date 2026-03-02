@@ -82,7 +82,14 @@ def install_llama_cpp(cuda_version: str | None = None, force_cpu: bool = False) 
     """Install llama-cpp-python with appropriate GPU/CPU support."""
     if force_cpu:
         print("Installing CPU version (forced)...")
-        cmd = [sys.executable, "-m", "pip", "install", "--force-reinstall", "llama-cpp-python"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "llama-cpp-python",
+        ]
     elif cuda_version:
         cuda_tag = f"cu{cuda_version.replace('.', '')}"
         wheel_url = f"{WHEEL_BASE_URL}/{cuda_tag}"
@@ -99,7 +106,14 @@ def install_llama_cpp(cuda_version: str | None = None, force_cpu: bool = False) 
         ]
     else:
         print("Installing CPU version (no compatible CUDA found)...")
-        cmd = [sys.executable, "-m", "pip", "install", "--force-reinstall", "llama-cpp-python"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "llama-cpp-python",
+        ]
 
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd)
@@ -107,7 +121,9 @@ def install_llama_cpp(cuda_version: str | None = None, force_cpu: bool = False) 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Install llama-cpp-python with GPU support")
+    parser = argparse.ArgumentParser(
+        description="Install llama-cpp-python with GPU support"
+    )
     parser.add_argument(
         "--cuda",
         type=str,

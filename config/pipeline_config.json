@@ -1,0 +1,13 @@
+{
+  "embedder_model": "intfloat/multilingual-e5-large",
+  "reranker_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+  "translator_model": "Helsinki-NLP/opus-mt-en-de",
+  "bm25_top_k": 50,
+  "dense_top_k": 50,
+  "graph_expansion_seeds": 5,
+  "graph_expansion_k": 10,
+  "reranker_top_k": 150,
+  "threshold": 0.0,
+  "rrf_k": 60,
+  "text_excerpt_max_chars": 512
+}

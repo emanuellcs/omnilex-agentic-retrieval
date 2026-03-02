@@ -194,14 +194,21 @@ def parse_citations_from_output(output: str) -> list[str]:
         # Skip empty lines and common non-citation prefixes
         if not line:
             continue
-        if line.lower().startswith(("thought:", "action:", "observation:", "final answer:")):
+        if line.lower().startswith(
+            ("thought:", "action:", "observation:", "final answer:")
+        ):
             continue
 
         # Clean up common list markers
         line = line.lstrip("-•*0123456789.) ")
 
         # Check for law citations (Art., SR) or court citations (BGE, docket-style)
-        if "SR" in line or "BGE" in line or "Art." in line or re.search(r"\d+[A-Z]_", line):
+        if (
+            "SR" in line
+            or "BGE" in line
+            or "Art." in line
+            or re.search(r"\d+[A-Z]_", line)
+        ):
             citations.append(line)
 
     return citations

@@ -198,7 +198,9 @@ class TestCitationNormalizer:
 
     def test_are_equivalent_same_bge(self):
         """Test equivalence of same BGE citation."""
-        assert self.normalizer.are_equivalent("BGE 116 Ia 56 E. 2b", "BGE 116 Ia 56 E. 2b")
+        assert self.normalizer.are_equivalent(
+            "BGE 116 Ia 56 E. 2b", "BGE 116 Ia 56 E. 2b"
+        )
 
     def test_are_not_equivalent(self):
         """Test non-equivalence of different citations."""
