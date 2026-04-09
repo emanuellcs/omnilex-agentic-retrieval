@@ -91,18 +91,19 @@ class Scorer:
             citation_string: Semicolon-separated citation string
 
         Returns:
-            List of normalized canonical citation IDs
+            List of normalized (whitespace-only) citation IDs
         """
         if not citation_string or citation_string.strip() == "":
             return []
 
+        # Match official evaluate_submission.py: strip and collapse whitespace
         raw_citations = [
-            c.strip()
+            re.sub(r"\s+", " ", c.strip())
             for c in citation_string.split(self.citation_separator)
             if c.strip()
         ]
 
-        return self.normalizer.canonicalize_list(raw_citations)
+        return raw_citations
 
     def score(
         self,

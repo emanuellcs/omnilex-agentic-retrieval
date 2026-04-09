@@ -42,7 +42,7 @@ def load_valid_court_citations(output_dir: Path) -> set[str]:
     citations (e.g., 5A_800/2019 E. 2, 2C_123/2020 E. 1.2.3).
     """
     valid_citations = set()
-    court_file = output_dir / "retrieval" / "court_considerations.csv"
+    court_file = output_dir / "court_considerations.csv"
 
     if not court_file.exists():
         print(f"  Warning: {court_file} not found. Skipping court citation filtering.")

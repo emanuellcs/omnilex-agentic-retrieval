@@ -53,16 +53,19 @@ class CitationCooccurrenceGraph:
                 found_citations.append(canonical)
 
         # Extract Law citations (requires knowing abbreviations)
-        for abbrev in self.normalizer._law_abbreviations:
+        # Use the updated normalizer attribute for all language variations
+        for abbrev in self.normalizer._all_abbrevs:
             # Simple check for abbreviation presence
             if abbrev in text:
                 # Find occurrences around the abbreviation
-                # This is a bit heuristic but avoids re-implementing complex regex
-                pattern = rf"(?:Art\.?|Artikel)\s*\d+[a-z]?.*?\s+{re.escape(abbrev)}"
+                # We limit the middle part to 50 chars to avoid crossing multiple citations
+                pattern = (
+                    rf"(?:Art\.?|Artikel)\s*\d+[a-z]?.{{0,50}}?\s*{re.escape(abbrev)}"
+                )
                 for match in re.finditer(pattern, text, re.IGNORECASE):
-                    canonical = self.normalizer.canonicalize(match.group(0))
+                    canonical = self.normalizer.normalize(match.group(0))
                     if canonical:
-                        found_citations.append(canonical)
+                        found_citations.append(canonical.canonical_id)
 
         # 2. Extract Docket-style citations
         for match in re.finditer(self.DOCKET_PATTERN, text, re.IGNORECASE):

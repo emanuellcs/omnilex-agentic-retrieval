@@ -25,11 +25,11 @@ class CrossEncoderReranker:
         """Initialize CrossEncoderReranker.
 
         Args:
-            model_name: HuggingFace cross-encoder model name
+            model_name: HuggingFace cross-encoder model name or local path
             device: Device to use (cuda, cpu). Auto-detects if None.
             batch_size: Batch size for inference
         """
-        self.model_name = model_name
+        self.model_name = self._resolve_model_path(model_name)
         self.batch_size = batch_size
 
         if CrossEncoder is None:
@@ -45,11 +45,27 @@ class CrossEncoderReranker:
             self.device = device
 
         try:
-            self.model = CrossEncoder(model_name, device=self.device)
-            logger.info(f"Loaded cross-encoder model {model_name} on {self.device}")
+            self.model = CrossEncoder(self.model_name, device=self.device)
+            logger.info(
+                f"Loaded cross-encoder model {self.model_name} on {self.device}"
+            )
         except Exception as e:
-            logger.error(f"Failed to load cross-encoder model {model_name}: {e}")
+            logger.error(f"Failed to load cross-encoder model {self.model_name}: {e}")
             self.model = None
+
+    def _resolve_model_path(self, model_name: str) -> str:
+        """Resolve model name to a local path if available."""
+        # 1. Check if it's already a valid local path
+        if Path(model_name).exists():
+            return model_name
+
+        # 2. Check Kaggle input directory
+        kaggle_path = Path("/kaggle/input/omnilex-models") / model_name.split("/")[-1]
+        if kaggle_path.exists():
+            return str(kaggle_path)
+
+        # 3. Fallback to original name (HF Hub)
+        return model_name
 
     def rerank(
         self,

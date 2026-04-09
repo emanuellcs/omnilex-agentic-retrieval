@@ -26,10 +26,10 @@ class QueryTranslator:
         """Initialize QueryTranslator.
 
         Args:
-            model_name: HuggingFace model name
+            model_name: HuggingFace model name or local path
             device: Device to use (cuda or cpu). Auto-detects if None.
         """
-        self.model_name = model_name
+        self.model_name = self._resolve_model_path(model_name)
         self._cache: dict[str, str] = {}
 
         if MarianMTModel is None or MarianTokenizer is None:
@@ -46,13 +46,27 @@ class QueryTranslator:
             self.device = device
 
         try:
-            self.tokenizer = MarianTokenizer.from_pretrained(model_name)
-            self.model = MarianMTModel.from_pretrained(model_name).to(self.device)
-            logger.info(f"Loaded translation model {model_name} on {self.device}")
+            self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+            self.model = MarianMTModel.from_pretrained(self.model_name).to(self.device)
+            logger.info(f"Loaded translation model {self.model_name} on {self.device}")
         except Exception as e:
-            logger.error(f"Failed to load translation model {model_name}: {e}")
+            logger.error(f"Failed to load translation model {self.model_name}: {e}")
             self.model = None
             self.tokenizer = None
+
+    def _resolve_model_path(self, model_name: str) -> str:
+        """Resolve model name to a local path if available."""
+        # 1. Check if it's already a valid local path
+        if Path(model_name).exists():
+            return model_name
+
+        # 2. Check Kaggle input directory
+        kaggle_path = Path("/kaggle/input/omnilex-models") / model_name.split("/")[-1]
+        if kaggle_path.exists():
+            return str(kaggle_path)
+
+        # 3. Fallback to original name (HF Hub)
+        return model_name
 
     def translate(self, text: str) -> str:
         """Translate English text to German.

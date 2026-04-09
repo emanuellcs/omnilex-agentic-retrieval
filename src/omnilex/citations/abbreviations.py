@@ -10,10 +10,34 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+
 # Path to abbreviations JSON file
-ABBREV_FILE = (
-    Path(__file__).parent.parent.parent.parent / "utils" / "abbrev-translations.json"
-)
+def _resolve_abbrev_file() -> Path:
+    """Resolve the path to abbrev-translations.json across environments."""
+    # 1. Try local project structure (relative to this file)
+    local_path = (
+        Path(__file__).parent.parent.parent.parent
+        / "utils"
+        / "abbrev-translations.json"
+    )
+    if local_path.exists():
+        return local_path
+
+    # 2. Try Kaggle source dataset structure
+    kaggle_path = Path("/kaggle/input/omnilex-src/utils/abbrev-translations.json")
+    if kaggle_path.exists():
+        return kaggle_path
+
+    # 3. Try standard project root (if running from root)
+    root_path = Path("utils/abbrev-translations.json")
+    if root_path.exists():
+        return root_path
+
+    # Default to local path for error message if nothing found
+    return local_path
+
+
+ABBREV_FILE = _resolve_abbrev_file()
 
 
 @lru_cache(maxsize=1)
@@ -40,6 +64,24 @@ def get_german_abbreviations() -> list[str]:
         key=len,
         reverse=True,  # Longest first for regex matching
     )
+
+
+def get_all_abbreviations_mapping() -> dict[str, str]:
+    """Get a mapping from all language abbreviations to their German canonical ID.
+
+    Mapping includes de, fr, it keys pointing to the 'de' value.
+    Example: {"CC": "ZGB", "ZGB": "ZGB", ...}
+    """
+    abbrevs = load_abbreviations()
+    mapping = {}
+    for entry_id, langs in abbrevs.items():
+        de_val = langs.get("de")
+        if not de_val:
+            continue
+        for lang, val in langs.items():
+            if val and not val[0].isdigit():
+                mapping[val] = de_val
+    return mapping
 
 
 def is_valid_abbreviation(abbrev: str) -> bool:

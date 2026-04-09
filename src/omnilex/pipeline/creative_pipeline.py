@@ -40,7 +40,9 @@ class CreativePipeline(FullPipeline):
             model: Gemini model name
             corpus_citation_set: Grounding set
         """
-        super().__init__(hybrid_retriever, reranker, corpus_citation_set=corpus_citation_set)
+        super().__init__(
+            hybrid_retriever, reranker, corpus_citation_set=corpus_citation_set
+        )
         self.gemini_api_key = gemini_api_key
         self.model_name = model
 
@@ -69,9 +71,14 @@ class CreativePipeline(FullPipeline):
             self.client.close()
             self.client = None
 
-    def _build_advocate_prompt(self, query: str, candidates: list[dict[str, Any]]) -> str:
+    def _build_advocate_prompt(
+        self, query: str, candidates: list[dict[str, Any]]
+    ) -> str:
         candidates_text = "\n".join(
-            [f"- {c['citation']}: {str(c.get('text', ''))[:300]}..." for c in candidates[:30]]
+            [
+                f"- {c['citation']}: {str(c.get('text', ''))[:300]}..."
+                for c in candidates[:30]
+            ]
         )
         return f"""You are a Swiss legal Advocate. Your goal is to argue FOR the relevance of each citation provided below in the context of the legal query.
 Be inclusive: if a citation might be relevant, argue for its inclusion.
@@ -129,7 +136,9 @@ EXCLUDE: [Citation String]
 
 Ensure you copy the citation string exactly from the candidates list."""
 
-    def _parse_arbiter_response(self, response: str, candidates: list[dict[str, Any]]) -> list[str]:
+    def _parse_arbiter_response(
+        self, response: str, candidates: list[dict[str, Any]]
+    ) -> list[str]:
         # Extract all INCLUDE lines
         include_pattern = r"^INCLUDE\s*:\s*(.+)$"
         selected_citations = []
@@ -178,14 +187,18 @@ Ensure you copy the citation string exactly from the candidates list."""
             # 3. Devil's Advocate call
             devils_resp = self.client.models.generate_content(
                 model=self.model_name,
-                contents=self._build_devils_advocate_prompt(query, reranked, advocate_resp),
+                contents=self._build_devils_advocate_prompt(
+                    query, reranked, advocate_resp
+                ),
                 config=config,
             ).text
 
             # 4. Arbiter call
             arbiter_resp = self.client.models.generate_content(
                 model=self.model_name,
-                contents=self._build_arbiter_prompt(query, reranked, advocate_resp, devils_resp),
+                contents=self._build_arbiter_prompt(
+                    query, reranked, advocate_resp, devils_resp
+                ),
                 config=config,
             ).text
 

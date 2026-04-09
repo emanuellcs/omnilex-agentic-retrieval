@@ -46,6 +46,25 @@ class HybridRetriever:
         self.citation_graph = citation_graph
         self.corpus_citation_set = corpus_citation_set
 
+        # Build citation-to-text lookup for graph expansion
+        self._citation_to_text: dict[str, str] = {}
+        self._build_citation_to_text_lookup()
+
+    def _build_citation_to_text_lookup(self) -> None:
+        """Build in-memory lookup from citation to text from all indices."""
+        logger.info("Building citation-to-text lookup dictionary...")
+        # Laws
+        for doc in self.laws_faiss.documents:
+            cit = doc.get("citation")
+            if cit:
+                self._citation_to_text[cit] = doc.get("text", "")
+        # Courts
+        for doc in self.courts_faiss.documents:
+            cit = doc.get("citation")
+            if cit:
+                self._citation_to_text[cit] = doc.get("text", "")
+        logger.info(f"Lookup built with {len(self._citation_to_text)} entries.")
+
     def retrieve(
         self, query: str, top_k_per_source: int = 50, rrf_k: int = 60
     ) -> list[dict[str, Any]]:
@@ -164,13 +183,11 @@ class HybridRetriever:
                 citation not in existing_citations
                 and citation in self.corpus_citation_set
             ):
-                # Add a dummy doc entry for the graph citation
-                # Note: We won't have the text unless we look it up in corpus,
-                # but reranker needs text. In the full pipeline, we might need a lookup.
+                # Add a dummy doc entry for the graph citation, now with text lookup
                 expanded_candidates.append(
                     {
                         "citation": citation,
-                        "text": "",  # Needs to be filled by the caller if reranking is desired
+                        "text": self._citation_to_text.get(citation, ""),
                         "_source": "graph",
                         "_ppr_score": ppr_score,
                     }

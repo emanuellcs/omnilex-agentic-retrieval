@@ -2,7 +2,10 @@
 
 import re
 
-from .abbreviations import get_german_abbreviations
+from .abbreviations import (
+    get_all_abbreviations_mapping,
+    get_german_abbreviations,
+)
 from .types import Citation, CitationType
 
 
@@ -11,7 +14,7 @@ class CitationNormalizer:
 
     Handles two main citation types:
     1. Federal law citations - Canonical format: Art. X [Abs. Y] BOOK
-       Examples: "Art. 1 ZGB", "Art. 11 Abs. 2 OR"
+       Examples: "Art. 1 ZGB", "Art. 11 Abs. 2 OR", "Art. 1 CC"
        BOOK is the law abbreviation (loaded from data/abbrev-translations.json)
        Note: Subparagraph elements (lit., Ziff., Nr., etc.) are normalized away.
 
@@ -34,16 +37,19 @@ class CitationNormalizer:
     )
 
     # Article pattern: "Art. 1", "Art 1", "Art. 1a", "Artikel 1"
-    # Note: (?![a-zA-Z]) ensures we don't capture first letter of next word
-    ARTICLE_PATTERN = r"(?:Art\.?|Artikel)\s*(\d+[a-z]?)(?![a-zA-Z])"
+    # Note: Handles no-space like "Art.117a". We use negative lookahead (?! [a-z])
+    # to avoid capturing 'Art. 1' in 'Art. 1abc' but allow 'Art. 1ZGB'
+    ARTICLE_PATTERN = r"(?:Art\.?|Artikel)\s*(\d+[a-z]?)(?![a-z])"
 
     # Paragraph pattern: "Abs. 2", "Absatz 2", "al. 2" (French), "cpv. 2" (Italian)
     PARAGRAPH_PATTERN = r"(?:Abs\.?|Absatz|al\.?|cpv\.?)\s*(\d+[a-z]?)"
 
     def __init__(self):
         """Initialize normalizer with abbreviations from JSON file."""
-        # Load all German law abbreviations from data/abbrev-translations.json
-        self._law_abbreviations = get_german_abbreviations()
+        # Load all abbreviations and their mapping to German canonical form
+        self._abbreviation_map = get_all_abbreviations_mapping()
+        # Sorted by length (longest first) for proper regex matching
+        self._all_abbrevs = sorted(self._abbreviation_map.keys(), key=len, reverse=True)
 
     def normalize(self, raw_citation: str) -> Citation | None:
         """Parse and normalize a raw citation string.
@@ -64,11 +70,13 @@ class CitationNormalizer:
         if bge_match:
             return self._parse_bge(raw_citation, bge_match)
 
-        # Try law abbreviation patterns (e.g., "Art. 1 ZGB")
-        # Check against all known abbreviations from JSON file
-        for abbrev in self._law_abbreviations:
+        # Try law abbreviation patterns (e.g., "Art. 1 ZGB" or "Art. 1 CC")
+        # Check against all known abbreviations (de, fr, it)
+        for abbrev in self._all_abbrevs:
             if abbrev in raw_citation:
-                return self._parse_law_abbrev(raw_citation, abbrev)
+                # Use the German canonical abbreviation
+                de_abbrev = self._abbreviation_map[abbrev]
+                return self._parse_law_abbrev(raw_citation, de_abbrev)
 
         return None
 

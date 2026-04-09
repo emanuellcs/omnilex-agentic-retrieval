@@ -70,7 +70,7 @@ def main():
     )
     parser.add_argument("--max-rows-laws", type=int, help="Limit laws rows for testing")
     parser.add_argument(
-        "--max-rows_courts", type=int, help="Limit courts rows for testing"
+        "--max-rows-courts", type=int, help="Limit courts rows for testing"
     )
 
     args = parser.parse_args()
