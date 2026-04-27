@@ -17,7 +17,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from omnilex.retrieval.bm25_index import BM25Index, load_jsonl_corpus
+from omnilex.retrieval.bm25_index import BM25Index, iter_jsonl_corpus
 
 
 def build_laws_index(input_dir: Path, output_dir: Path) -> None:
@@ -48,32 +48,25 @@ def build_laws_index(input_dir: Path, output_dir: Path) -> None:
         print(f"  Expected one of: {[str(p) for p in possible_paths]}")
         return
 
-    # Load corpus
-    print(f"  Loading corpus from {corpus_path}")
-    documents = load_jsonl_corpus(corpus_path)
-    print(f"  Loaded {len(documents)} documents")
-
-    if len(documents) == 0:
-        print("  Warning: Empty corpus. Skipping index build.")
-        return
-
     # Build index
-    index = BM25Index(
-        documents=documents,
-        text_field="text",
-        citation_field="citation",
-    )
-
-    # Save index
-    output_path = output_dir / "laws_index.pkl"
+    output_path = output_dir / "laws_index"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    index.save(output_path)
-
-    print(f"  Index saved to {output_path}")
+    print(f"  Streaming corpus from {corpus_path}")
+    try:
+        index = BM25Index.build_from_iterable(
+            iter_jsonl_corpus(corpus_path),
+            output_path,
+            text_field="text",
+            citation_field="citation",
+        )
+    except ValueError as exc:
+        print(f"  Warning: {exc}. Skipping index build.")
+        return
 
     # Test search
     test_query = "Vertrag"
     results = index.search(test_query, top_k=3)
+    print(f"  Index saved to {output_path}")
     print(f"  Test search for '{test_query}': {len(results)} results")
 
 
@@ -105,32 +98,25 @@ def build_courts_index(input_dir: Path, output_dir: Path) -> None:
         print(f"  Expected one of: {[str(p) for p in possible_paths]}")
         return
 
-    # Load corpus
-    print(f"  Loading corpus from {corpus_path}")
-    documents = load_jsonl_corpus(corpus_path)
-    print(f"  Loaded {len(documents)} documents")
-
-    if len(documents) == 0:
-        print("  Warning: Empty corpus. Skipping index build.")
-        return
-
     # Build index
-    index = BM25Index(
-        documents=documents,
-        text_field="text",
-        citation_field="citation",
-    )
-
-    # Save index
-    output_path = output_dir / "courts_index.pkl"
+    output_path = output_dir / "courts_index"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    index.save(output_path)
-
-    print(f"  Index saved to {output_path}")
+    print(f"  Streaming corpus from {corpus_path}")
+    try:
+        index = BM25Index.build_from_iterable(
+            iter_jsonl_corpus(corpus_path),
+            output_path,
+            text_field="text",
+            citation_field="citation",
+        )
+    except ValueError as exc:
+        print(f"  Warning: {exc}. Skipping index build.")
+        return
 
     # Test search
     test_query = "Meinungsfreiheit"
     results = index.search(test_query, top_k=3)
+    print(f"  Index saved to {output_path}")
     print(f"  Test search for '{test_query}': {len(results)} results")
 
 
