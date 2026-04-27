@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import logging
 import pickle
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
 try:
     import faiss
-    from sentence_transformers import SentenceTransformer
     import torch
+    from sentence_transformers import SentenceTransformer
 except ImportError:
     faiss = None
     SentenceTransformer = None
@@ -19,23 +20,26 @@ logger = logging.getLogger(__name__)
 
 
 class MultilingualEmbedder:
-    """Multilingual text embedder using sentence-transformers (e.g., intfloat/multilingual-e5-large)."""
+    """Multilingual text embedder using sentence-transformers."""
 
     def __init__(
         self,
         model_name: str = "intfloat/multilingual-e5-large",
-        device: str | None = None,
+        device: str | Sequence[str] | None = None,
         batch_size: int = 128,
+        chunk_size: int | None = None,
     ):
         """Initialize MultilingualEmbedder.
 
         Args:
             model_name: HuggingFace model name or local path
-            device: Device to use (cuda, cpu). Auto-detects if None.
+            device: Device(s) to use. Auto-detects all available CUDA GPUs if None.
             batch_size: Batch size for encoding
+            chunk_size: Number of texts sent to each multi-process worker at a time.
         """
         self.model_name = self._resolve_model_path(model_name)
         self.batch_size = batch_size
+        self.chunk_size = chunk_size
 
         if SentenceTransformer is None:
             logger.warning(
@@ -46,12 +50,21 @@ class MultilingualEmbedder:
 
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
+        elif isinstance(device, str):
             self.device = device
+        else:
+            self.device = list(device)
+
+        model_device = self._get_model_load_device()
 
         try:
-            self.model = SentenceTransformer(self.model_name, device=self.device)
-            logger.info(f"Loaded embedding model {self.model_name} on {self.device}")
+            self.model = SentenceTransformer(self.model_name, device=model_device)
+            logger.info(
+                "Loaded embedding model %s on %s; encode target device(s): %s",
+                self.model_name,
+                model_device,
+                self._get_encode_devices(),
+            )
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_name}: {e}")
             self.model = None
@@ -70,6 +83,129 @@ class MultilingualEmbedder:
         # 3. Fallback to original name (HF Hub)
         return model_name
 
+    def _get_model_load_device(self) -> str:
+        """Return the device used for the parent process model instance."""
+        devices = self._get_encode_devices()
+
+        if len(devices) > 1:
+            # Multi-process workers load/use the CUDA devices. Keep the parent
+            # model on CPU so it does not reserve memory on cuda:0 before
+            # spawning workers.
+            return "cpu"
+
+        return devices[0]
+
+    def _get_encode_devices(self) -> list[str]:
+        """Return target devices for encoding, using all CUDA GPUs when available."""
+        if isinstance(self.device, list):
+            return self.device
+
+        if self.device == "cuda" and torch is not None and torch.cuda.is_available():
+            device_count = torch.cuda.device_count()
+            if device_count > 1:
+                return [f"cuda:{idx}" for idx in range(device_count)]
+
+        return [self.device]
+
+    def _clear_cuda_cache(self) -> None:
+        """Release cached CUDA memory after large encoding jobs."""
+        if torch is None or not torch.cuda.is_available():
+            return
+
+        try:
+            torch.cuda.empty_cache()
+            if hasattr(torch.cuda, "ipc_collect"):
+                torch.cuda.ipc_collect()
+        except Exception as e:
+            logger.debug("Failed to clear CUDA cache after encoding: %s", e)
+
+    def _single_process_encode(
+        self,
+        texts: list[str],
+        prefix: str,
+        show_progress: bool,
+    ) -> np.ndarray:
+        """Encode on one device, preferring SentenceTransformers prompt support."""
+        try:
+            return self.model.encode(
+                texts,
+                prompt=prefix,
+                batch_size=self.batch_size,
+                show_progress_bar=show_progress,
+                convert_to_numpy=True,
+            )
+        except TypeError:
+            prefixed_texts = [prefix + text for text in texts]
+            return self.model.encode(
+                prefixed_texts,
+                batch_size=self.batch_size,
+                show_progress_bar=show_progress,
+                convert_to_numpy=True,
+            )
+
+    def _multi_process_encode(
+        self,
+        texts: list[str],
+        prefix: str,
+        devices: list[str],
+        show_progress: bool,
+    ) -> np.ndarray:
+        """Encode using SentenceTransformers' native multi-process GPU pool."""
+        pool = None
+        logger.info(
+            "Encoding %s texts across %s device(s): %s",
+            len(texts),
+            len(devices),
+            devices,
+        )
+
+        try:
+            pool = self.model.start_multi_process_pool(target_devices=devices)
+            try:
+                return self.model.encode(
+                    texts,
+                    prompt=prefix,
+                    batch_size=self.batch_size,
+                    show_progress_bar=show_progress,
+                    convert_to_numpy=True,
+                    pool=pool,
+                    chunk_size=self.chunk_size,
+                )
+            except TypeError:
+                if hasattr(self.model, "encode_multi_process"):
+                    try:
+                        return self.model.encode_multi_process(
+                            texts,
+                            pool,
+                            prompt=prefix,
+                            batch_size=self.batch_size,
+                            chunk_size=self.chunk_size,
+                            show_progress_bar=show_progress,
+                        )
+                    except TypeError:
+                        prefixed_texts = [prefix + text for text in texts]
+                        return self.model.encode_multi_process(
+                            prefixed_texts,
+                            pool,
+                            batch_size=self.batch_size,
+                            chunk_size=self.chunk_size,
+                            show_progress_bar=show_progress,
+                        )
+
+                prefixed_texts = [prefix + text for text in texts]
+                return self.model.encode(
+                    prefixed_texts,
+                    batch_size=self.batch_size,
+                    show_progress_bar=show_progress,
+                    convert_to_numpy=True,
+                    pool=pool,
+                    chunk_size=self.chunk_size,
+                )
+        finally:
+            if pool is not None:
+                self.model.stop_multi_process_pool(pool)
+            self._clear_cuda_cache()
+
     def encode(
         self, texts: list[str], is_query: bool = False, show_progress: bool = True
     ) -> np.ndarray:
@@ -77,7 +213,8 @@ class MultilingualEmbedder:
 
         Args:
             texts: List of text strings
-            is_query: Whether these are query texts (prepends 'query: ') or passage texts (prepends 'passage: ')
+            is_query: Whether these are query texts. Uses 'query: ' for queries and
+                'passage: ' for passage texts.
             show_progress: Whether to show progress bar
 
         Returns:
@@ -91,14 +228,15 @@ class MultilingualEmbedder:
 
         # For e5 models, prepend prefix
         prefix = "query: " if is_query else "passage: "
-        prefixed_texts = [prefix + t for t in texts]
+        devices = self._get_encode_devices()
 
-        embeddings = self.model.encode(
-            prefixed_texts,
-            batch_size=self.batch_size,
-            show_progress_bar=show_progress,
-            convert_to_numpy=True,
-        )
+        if len(devices) > 1:
+            embeddings = self._multi_process_encode(
+                texts, prefix, devices, show_progress
+            )
+        else:
+            embeddings = self._single_process_encode(texts, prefix, show_progress)
+            self._clear_cuda_cache()
 
         return embeddings.astype(np.float32)
 
