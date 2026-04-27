@@ -45,7 +45,7 @@ Designed for the "Most Creative" prize category, this approach utilizes the `goo
 
 ## 🛠️ Technical Stack
 
-* **Retrieval**: `rank-bm25`, `faiss-cpu/gpu`
+* **Retrieval**: `bm25s`, `faiss-cpu/gpu`
 * **NLP**: `sentence-transformers`, `transformers` (MarianMT), `torch`
 * **Graph Processing**: `networkx`
 * **Agentic Framework**: Gemini 3.0 Flash Preview (`google-genai`)

@@ -38,7 +38,7 @@ The creative submission uses an LLM-based decision engine powered by the `google
 A critical component of the architecture is the **Hard Grounding Oracle**. Every pipeline output is filtered through a pre-computed set of all canonical citations in the retrieval corpus. This guarantees that no hallucinated or malformed citations are ever submitted, ensuring zero precision loss from formatting errors.
 
 ## 5. Technical Stack
-- **Retrieval**: `rank-bm25`, `faiss-cpu/gpu`
+- **Retrieval**: `bm25s`, `faiss-cpu/gpu`
 - **NLP**: `sentence-transformers`, `transformers` (MarianMT), `torch`
 - **Graph**: `networkx`
 - **Inference**: Gemini 3.0 Flash Preview (`google-genai`), Local CPU/GPU (Primary)
