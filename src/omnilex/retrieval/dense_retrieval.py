@@ -10,11 +10,21 @@ import numpy as np
 try:
     import faiss
     import torch
+    import torch.multiprocessing as mp
     from sentence_transformers import SentenceTransformer
+
+    # Force 'spawn' start method to avoid 'fork' trap where workers inherit
+    # massive parent memory, causing VRAM-mapped context bloat on CUDA init.
+    try:
+        mp.set_start_method("spawn", force=True)
+    except RuntimeError:
+        # Already set or otherwise unchangeable
+        pass
 except ImportError:
     faiss = None
     SentenceTransformer = None
     torch = None
+    mp = None
 
 logger = logging.getLogger(__name__)
 
