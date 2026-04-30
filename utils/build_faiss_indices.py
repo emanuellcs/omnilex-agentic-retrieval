@@ -9,6 +9,12 @@ from pathlib import Path
 
 # Avoid CUDA context creation during torch.cuda availability checks in the parent.
 os.environ.setdefault("PYTORCH_NVML_BASED_CUDA_CHECK", "1")
+# Keep accidental JAX imports from reserving Kaggle GPU memory needed by Torch.
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.05")
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
 
 # Ensure cuDF is disabled to prevent VRAM hoarding
 try:
