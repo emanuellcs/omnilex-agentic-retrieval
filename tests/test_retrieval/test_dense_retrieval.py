@@ -82,6 +82,34 @@ class TestMultilingualEmbedder(unittest.TestCase):
         self.assertEqual(kwargs["pool"], {"processes": ["p0", "p1"]})
         self.assertEqual(kwargs["chunk_size"], 1)
 
+    def test_persistent_pool(self):
+        mock_torch.cuda.is_available.return_value = True
+        mock_torch.cuda.device_count.return_value = 2
+        pool_val = {"processes": ["p0", "p1"]}
+        self.mock_model.start_multi_process_pool.return_value = pool_val
+        self.mock_model.encode.return_value = np.array([[0.1, 0.2]])
+
+        embedder = MultilingualEmbedder()
+
+        # Start persistent pool
+        pool = embedder.start_multi_process_pool()
+        self.assertEqual(pool, pool_val)
+        self.assertEqual(embedder.pool, pool_val)
+
+        # Encode with persistent pool
+        embedder.encode(["test"])
+
+        # Check that start_multi_process_pool was NOT called again by encode
+        self.mock_model.start_multi_process_pool.assert_called_once()
+
+        # Check that stop_multi_process_pool was NOT called by encode
+        self.mock_model.stop_multi_process_pool.assert_not_called()
+
+        # Explicit stop
+        embedder.stop_multi_process_pool()
+        self.mock_model.stop_multi_process_pool.assert_called_once_with(pool_val)
+        self.assertIsNone(embedder.pool)
+
 
 class TestFAISSIndex(unittest.TestCase):
     def setUp(self):
@@ -110,6 +138,30 @@ class TestFAISSIndex(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["citation"], "A")
         self.assertEqual(results[0]["_score"], 0.9)
+
+    def test_incremental_build(self):
+        mock_index = MagicMock()
+        mock_faiss.IndexFlatIP.return_value = mock_index
+
+        idx = FAISSIndex()
+        docs1 = [{"citation": "A", "text": "text A"}]
+        emb1 = np.array([[1.0, 0.0]], dtype=np.float32)
+
+        # Train
+        idx.train(emb1, index_type="Flat")
+        mock_faiss.IndexFlatIP.assert_called_once()
+
+        # Add batch 1
+        idx.add_batch(emb1, docs1)
+        self.assertEqual(len(idx.documents), 1)
+        mock_index.add.assert_called_once()
+
+        # Add batch 2
+        docs2 = [{"citation": "B", "text": "text B"}]
+        emb2 = np.array([[0.0, 1.0]], dtype=np.float32)
+        idx.add_batch(emb2, docs2)
+        self.assertEqual(len(idx.documents), 2)
+        self.assertEqual(mock_index.add.call_count, 2)
 
     def test_save_load(self):
         # Mock index
