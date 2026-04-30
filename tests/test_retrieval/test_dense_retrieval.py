@@ -1,4 +1,3 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,30 +5,40 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-# Mock sentence-transformers, faiss, and torch before importing
+from omnilex.retrieval import dense_retrieval
+from omnilex.retrieval.dense_retrieval import FAISSIndex, MultilingualEmbedder
+
 mock_st = MagicMock()
 mock_faiss = MagicMock()
 mock_torch = MagicMock()
 
-with patch.dict(
-    sys.modules,
-    {"sentence_transformers": mock_st, "faiss": mock_faiss, "torch": mock_torch},
-):
-    from omnilex.retrieval.dense_retrieval import FAISSIndex, MultilingualEmbedder
-
 
 class TestMultilingualEmbedder(unittest.TestCase):
     def setUp(self):
+        self.st_patch = patch.object(
+            dense_retrieval,
+            "SentenceTransformer",
+            mock_st.SentenceTransformer,
+        )
+        self.torch_patch = patch.object(dense_retrieval, "torch", mock_torch)
+        self.st_patch.start()
+        self.torch_patch.start()
         mock_st.SentenceTransformer.reset_mock()
         mock_torch.cuda.is_available.return_value = False
         mock_torch.cuda.device_count.return_value = 0
+        mock_torch.float16 = "float16"
+        mock_torch.float32 = "float32"
         self.mock_model = MagicMock()
         mock_st.SentenceTransformer.return_value = self.mock_model
 
+    def tearDown(self):
+        self.torch_patch.stop()
+        self.st_patch.stop()
+
     def test_init(self):
         embedder = MultilingualEmbedder()
-        mock_st.SentenceTransformer.assert_called_once()
-        self.assertIsNotNone(embedder.model)
+        mock_st.SentenceTransformer.assert_not_called()
+        self.assertIsNone(embedder.model)
 
     def test_encode(self):
         embedder = MultilingualEmbedder()
@@ -38,6 +47,10 @@ class TestMultilingualEmbedder(unittest.TestCase):
         embeddings = embedder.encode(["test1", "test2"])
 
         self.assertEqual(embeddings.shape, (2, 2))
+        mock_st.SentenceTransformer.assert_called_once_with(
+            embedder.model_name,
+            device="cpu",
+        )
         self.mock_model.encode.assert_called_once()
         args, kwargs = self.mock_model.encode.call_args
         self.assertEqual(args[0], ["test1", "test2"])
@@ -50,6 +63,10 @@ class TestMultilingualEmbedder(unittest.TestCase):
         embedding = embedder.encode_query("query text")
 
         self.assertEqual(embedding.shape, (2,))
+        mock_st.SentenceTransformer.assert_called_once_with(
+            embedder.model_name,
+            device="cpu",
+        )
         args, kwargs = self.mock_model.encode.call_args
         self.assertEqual(args[0], ["query text"])
         self.assertEqual(kwargs["prompt"], "query: ")
@@ -57,63 +74,73 @@ class TestMultilingualEmbedder(unittest.TestCase):
     def test_encode_uses_multi_gpu_pool(self):
         mock_torch.cuda.is_available.return_value = True
         mock_torch.cuda.device_count.return_value = 2
-        self.mock_model.start_multi_process_pool.return_value = {
-            "processes": ["p0", "p1"]
-        }
-        self.mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
+        pool = MagicMock()
+        pool.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
 
-        embedder = MultilingualEmbedder(batch_size=1, chunk_size=1)
-        embeddings = embedder.encode(["test1", "test2"])
+        with patch.object(
+            dense_retrieval, "EmbeddingWorkerPool", return_value=pool
+        ) as pool_cls:
+            embedder = MultilingualEmbedder(batch_size=1, chunk_size=1)
+            embeddings = embedder.encode(["test1", "test2"])
 
-        mock_st.SentenceTransformer.assert_called_once_with(
-            embedder.model_name,
-            device="cpu",
-        )
+        mock_st.SentenceTransformer.assert_not_called()
         self.assertEqual(embeddings.shape, (2, 2))
-        self.mock_model.start_multi_process_pool.assert_called_once_with(
-            target_devices=["cuda:0", "cuda:1"]
+        pool_cls.assert_called_once_with(
+            model_name=embedder.model_name,
+            devices=["cuda:0", "cuda:1"],
+            batch_size=1,
+            chunk_size=1,
+            dtype="float16",
+            max_seq_length=None,
         )
-        self.mock_model.stop_multi_process_pool.assert_called_once_with(
-            {"processes": ["p0", "p1"]}
+        pool.start.assert_called_once()
+        pool.encode.assert_called_once_with(
+            ["test1", "test2"],
+            prefix="passage: ",
+            show_progress=True,
+            chunk_size=1,
         )
-        args, kwargs = self.mock_model.encode.call_args
-        self.assertEqual(args[0], ["test1", "test2"])
-        self.assertEqual(kwargs["prompt"], "passage: ")
-        self.assertEqual(kwargs["pool"], {"processes": ["p0", "p1"]})
-        self.assertEqual(kwargs["chunk_size"], 1)
+        pool.stop.assert_called_once()
 
     def test_persistent_pool(self):
         mock_torch.cuda.is_available.return_value = True
         mock_torch.cuda.device_count.return_value = 2
-        pool_val = {"processes": ["p0", "p1"]}
-        self.mock_model.start_multi_process_pool.return_value = pool_val
-        self.mock_model.encode.return_value = np.array([[0.1, 0.2]])
+        pool_val = MagicMock()
+        pool_val.encode.return_value = np.array([[0.1, 0.2]])
 
-        embedder = MultilingualEmbedder()
+        with patch.object(
+            dense_retrieval, "EmbeddingWorkerPool", return_value=pool_val
+        ) as pool_cls:
+            embedder = MultilingualEmbedder()
 
-        # Start persistent pool
-        pool = embedder.start_multi_process_pool()
-        self.assertEqual(pool, pool_val)
-        self.assertEqual(embedder.pool, pool_val)
+            # Start persistent pool
+            pool = embedder.start_multi_process_pool()
+            self.assertEqual(pool, pool_val)
+            self.assertEqual(embedder.pool, pool_val)
 
-        # Encode with persistent pool
-        embedder.encode(["test"])
+            # Encode with persistent pool
+            embedder.encode(["test"])
 
-        # Check that start_multi_process_pool was NOT called again by encode
-        self.mock_model.start_multi_process_pool.assert_called_once()
+            pool_cls.assert_called_once()
+            pool_val.start.assert_called_once()
 
-        # Check that stop_multi_process_pool was NOT called by encode
-        self.mock_model.stop_multi_process_pool.assert_not_called()
+            # Persistent pool should stay open until explicitly stopped.
+            pool_val.stop.assert_not_called()
 
-        # Explicit stop
-        embedder.stop_multi_process_pool()
-        self.mock_model.stop_multi_process_pool.assert_called_once_with(pool_val)
-        self.assertIsNone(embedder.pool)
+            # Explicit stop
+            embedder.stop_multi_process_pool()
+            pool_val.stop.assert_called_once()
+            self.assertIsNone(embedder.pool)
 
 
 class TestFAISSIndex(unittest.TestCase):
     def setUp(self):
         mock_faiss.reset_mock()
+        self.faiss_patch = patch.object(dense_retrieval, "faiss", mock_faiss)
+        self.faiss_patch.start()
+
+    def tearDown(self):
+        self.faiss_patch.stop()
 
     def test_build_and_search(self):
         # We need a real-ish faiss for some parts or just mock everything

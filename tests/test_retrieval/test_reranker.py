@@ -1,21 +1,32 @@
+import numpy as np
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
-import numpy as np
 
-# Mock sentence-transformers and torch before importing
+from omnilex.retrieval import reranker
+from omnilex.retrieval.reranker import CrossEncoderReranker
+
 mock_st = MagicMock()
 mock_torch = MagicMock()
-
-with patch.dict(sys.modules, {"sentence_transformers": mock_st, "torch": mock_torch}):
-    from omnilex.retrieval.reranker import CrossEncoderReranker
 
 
 class TestCrossEncoderReranker(unittest.TestCase):
     def setUp(self):
+        self.cross_encoder_patch = patch.object(
+            reranker,
+            "CrossEncoder",
+            mock_st.CrossEncoder,
+        )
+        self.torch_patch = patch.object(reranker, "torch", mock_torch)
+        self.cross_encoder_patch.start()
+        self.torch_patch.start()
         mock_st.CrossEncoder.reset_mock()
+        mock_torch.cuda.is_available.return_value = False
         self.mock_model = MagicMock()
         mock_st.CrossEncoder.return_value = self.mock_model
+
+    def tearDown(self):
+        self.torch_patch.stop()
+        self.cross_encoder_patch.stop()
 
     def test_init(self):
         reranker = CrossEncoderReranker()
