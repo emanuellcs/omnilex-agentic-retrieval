@@ -2,11 +2,17 @@
 import argparse
 import logging
 import sys
+import gc
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -24,67 +30,92 @@ def build_indices(args):
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Process Laws
-    if args.laws_csv:
-        logger.info(f"Processing laws from {args.laws_csv}")
-        df_laws = pd.read_csv(args.laws_csv)
-        if args.max_rows_laws:
-            df_laws = df_laws.head(args.max_rows_laws)
+    # Start persistent pool for multiple GPUs
+    embedder.start_multi_process_pool()
 
-        texts = df_laws["text"].tolist()
-        logger.info(f"Encoding {len(texts)} law passages...")
-        embeddings = embedder.encode(texts, is_query=False)
+    try:
+        # 1. Process Laws
+        if args.laws_csv:
+            logger.info(f"Processing laws from {args.laws_csv}")
+            df_laws = pd.read_csv(args.laws_csv)
+            if args.max_rows_laws:
+                df_laws = df_laws.head(args.max_rows_laws)
 
-        index = FAISSIndex()
-        docs = df_laws[["citation", "text"]].to_dict("records")
-        index.build(embeddings, docs)
+            texts = df_laws["text"].tolist()
+            logger.info(f"Encoding {len(texts)} law passages...")
+            embeddings = embedder.encode(texts, is_query=False)
 
-        save_path = output_dir / "laws_faiss"
-        index.save(save_path)
-        logger.info(f"Laws FAISS index saved to {save_path}.faiss and .pkl")
+            index = FAISSIndex()
+            docs = df_laws[["citation", "text"]].to_dict("records")
+            index.build(embeddings, docs)
 
-    # 2. Process Courts (Chunked)
-    if args.courts_csv:
-        logger.info(f"Processing courts from {args.courts_csv}")
+            save_path = output_dir / "laws_faiss"
+            index.save(save_path)
+            logger.info(f"Laws FAISS index saved to {save_path}.faiss and .pkl")
 
-        all_embeddings = []
-        all_docs = []
+            # Clean up
+            del embeddings, docs, df_laws
+            gc.collect()
+            if torch and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        # Load in chunks to avoid OOM
-        chunksize = 50000
-        reader = pd.read_csv(args.courts_csv, chunksize=chunksize)
+        # 2. Process Courts (Chunked & Incremental)
+        if args.courts_csv:
+            logger.info(f"Processing courts from {args.courts_csv}")
 
-        row_count = 0
-        for chunk in reader:
-            if args.max_rows_courts and row_count >= args.max_rows_courts:
-                break
+            index = FAISSIndex()
+            is_trained = False
 
-            if args.max_rows_courts:
-                current_chunk = chunk.head(args.max_rows_courts - row_count)
-            else:
-                current_chunk = chunk
+            # Load in chunks to avoid RAM OOM
+            chunksize = 50000
+            reader = pd.read_csv(args.courts_csv, chunksize=chunksize)
 
-            texts = current_chunk["text"].fillna("").tolist()
-            logger.info(f"Encoding chunk of {len(texts)} court passages...")
-            chunk_embeddings = embedder.encode(texts, is_query=False)
+            row_count = 0
+            for chunk in tqdm(reader, desc="Processing court chunks"):
+                if args.max_rows_courts and row_count >= args.max_rows_courts:
+                    break
 
-            all_embeddings.append(chunk_embeddings)
-            all_docs.extend(current_chunk[["citation", "text"]].to_dict("records"))
+                if args.max_rows_courts:
+                    current_chunk = chunk.head(args.max_rows_courts - row_count)
+                else:
+                    current_chunk = chunk
 
-            row_count += len(current_chunk)
-            if args.max_rows_courts and row_count >= args.max_rows_courts:
-                break
+                texts = current_chunk["text"].fillna("").tolist()
+                logger.info(f"Encoding chunk of {len(texts)} court passages...")
+                chunk_embeddings = embedder.encode(texts, is_query=False)
 
-        final_embeddings = np.vstack(all_embeddings)
+                current_docs = current_chunk[["citation", "text"]].to_dict("records")
 
-        index = FAISSIndex()
-        # Use IVFFlat for large court corpus if not limited
-        index_type = "IVFFlat" if len(all_docs) > 100000 else "Flat"
-        index.build(final_embeddings, all_docs, index_type=index_type)
+                if not is_trained:
+                    # IVFFlat is recommended for >100k docs.
+                    # Training on 50k is sufficient for a 2.5M corpus.
+                    logger.info("Training IVFFlat index on first chunk...")
+                    index.train(
+                        chunk_embeddings,
+                        index_type="IVFFlat",
+                        total_expected_docs=2500000,
+                    )
+                    is_trained = True
 
-        save_path = output_dir / "courts_faiss"
-        index.save(save_path)
-        logger.info(f"Courts FAISS index saved to {save_path}.faiss and .pkl")
+                index.add_batch(chunk_embeddings, current_docs)
+                row_count += len(current_chunk)
+
+                # Aggressive memory hygiene
+                del chunk_embeddings, current_docs, current_chunk, texts
+                gc.collect()
+                if torch and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                if args.max_rows_courts and row_count >= args.max_rows_courts:
+                    break
+
+            save_path = output_dir / "courts_faiss"
+            index.save(save_path)
+            logger.info(f"Courts FAISS index saved to {save_path}.faiss and .pkl")
+
+    finally:
+        # Ensure pool is stopped and memory released
+        embedder.stop_multi_process_pool()
 
 
 def main():

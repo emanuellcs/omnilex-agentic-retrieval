@@ -40,6 +40,7 @@ class MultilingualEmbedder:
         self.model_name = self._resolve_model_path(model_name)
         self.batch_size = batch_size
         self.chunk_size = chunk_size
+        self.pool = None
 
         if SentenceTransformer is None:
             logger.warning(
@@ -119,6 +120,40 @@ class MultilingualEmbedder:
         except Exception as e:
             logger.debug("Failed to clear CUDA cache after encoding: %s", e)
 
+    def start_multi_process_pool(self, target_devices: list[str] | None = None) -> dict:
+        """Start a persistent multi-process pool for encoding.
+
+        Args:
+            target_devices: List of devices (e.g., ['cuda:0', 'cuda:1']).
+                Defaults to all available GPUs.
+
+        Returns:
+            The created pool dictionary.
+        """
+        if self.pool is not None:
+            return self.pool
+
+        if target_devices is None:
+            target_devices = self._get_encode_devices()
+
+        if len(target_devices) <= 1:
+            logger.info(
+                "Only one device detected (%s). Skipping pool creation.", target_devices
+            )
+            return None
+
+        logger.info("Starting persistent multi-process pool on %s", target_devices)
+        self.pool = self.model.start_multi_process_pool(target_devices=target_devices)
+        return self.pool
+
+    def stop_multi_process_pool(self) -> None:
+        """Stop the active multi-process pool and clear CUDA cache."""
+        if self.pool is not None:
+            logger.info("Stopping multi-process pool...")
+            self.model.stop_multi_process_pool(self.pool)
+            self.pool = None
+            self._clear_cuda_cache()
+
     def _single_process_encode(
         self,
         texts: list[str],
@@ -151,16 +186,19 @@ class MultilingualEmbedder:
         show_progress: bool,
     ) -> np.ndarray:
         """Encode using SentenceTransformers' native multi-process GPU pool."""
-        pool = None
-        logger.info(
-            "Encoding %s texts across %s device(s): %s",
-            len(texts),
-            len(devices),
-            devices,
-        )
+        pool_to_use = self.pool
+        own_pool = False
+
+        if pool_to_use is None:
+            logger.info(
+                "Starting temporary multi-process pool across %s device(s): %s",
+                len(devices),
+                devices,
+            )
+            pool_to_use = self.model.start_multi_process_pool(target_devices=devices)
+            own_pool = True
 
         try:
-            pool = self.model.start_multi_process_pool(target_devices=devices)
             try:
                 return self.model.encode(
                     texts,
@@ -168,7 +206,7 @@ class MultilingualEmbedder:
                     batch_size=self.batch_size,
                     show_progress_bar=show_progress,
                     convert_to_numpy=True,
-                    pool=pool,
+                    pool=pool_to_use,
                     chunk_size=self.chunk_size,
                 )
             except TypeError:
@@ -176,7 +214,7 @@ class MultilingualEmbedder:
                     try:
                         return self.model.encode_multi_process(
                             texts,
-                            pool,
+                            pool_to_use,
                             prompt=prefix,
                             batch_size=self.batch_size,
                             chunk_size=self.chunk_size,
@@ -186,7 +224,7 @@ class MultilingualEmbedder:
                         prefixed_texts = [prefix + text for text in texts]
                         return self.model.encode_multi_process(
                             prefixed_texts,
-                            pool,
+                            pool_to_use,
                             batch_size=self.batch_size,
                             chunk_size=self.chunk_size,
                             show_progress_bar=show_progress,
@@ -198,13 +236,13 @@ class MultilingualEmbedder:
                     batch_size=self.batch_size,
                     show_progress_bar=show_progress,
                     convert_to_numpy=True,
-                    pool=pool,
+                    pool=pool_to_use,
                     chunk_size=self.chunk_size,
                 )
         finally:
-            if pool is not None:
-                self.model.stop_multi_process_pool(pool)
-            self._clear_cuda_cache()
+            if own_pool:
+                self.model.stop_multi_process_pool(pool_to_use)
+                self._clear_cuda_cache()
 
     def encode(
         self, texts: list[str], is_query: bool = False, show_progress: bool = True
@@ -268,6 +306,68 @@ class FAISSIndex:
         self.index = index
         self.documents = documents or []
 
+    def train(
+        self,
+        embeddings: np.ndarray,
+        index_type: str = "Flat",
+        total_expected_docs: int | None = None,
+    ) -> None:
+        """Initialize and train the FAISS index.
+
+        Args:
+            embeddings: Numpy array of embeddings to use for training (N, D)
+            index_type: Type of FAISS index ("Flat", "IVFFlat")
+            total_expected_docs: Total number of documents expected in the index,
+                used to calculate IVFFlat heuristics.
+        """
+        if faiss is None:
+            raise ImportError("faiss is not installed.")
+
+        d = embeddings.shape[1]
+
+        # Create a copy for training to avoid modifying original in-place if not desired
+        train_vecs = embeddings.copy().astype(np.float32)
+        faiss.normalize_L2(train_vecs)
+
+        if index_type == "Flat":
+            self.index = faiss.IndexFlatIP(d)
+        elif index_type == "IVFFlat":
+            # Heuristic for nlist
+            n_docs = total_expected_docs if total_expected_docs else train_vecs.shape[0]
+            nlist = min(100, n_docs // 40)
+            if nlist < 1:
+                nlist = 1
+
+            quantizer = faiss.IndexFlatIP(d)
+            self.index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            self.index.train(train_vecs)
+        else:
+            raise ValueError(f"Unsupported index_type: {index_type}")
+
+    def add_batch(self, embeddings: np.ndarray, documents: list[dict]) -> None:
+        """Add a batch of embeddings and documents to the index.
+
+        Args:
+            embeddings: Numpy array of embeddings (N, D)
+            documents: List of document dictionaries
+        """
+        if self.index is None:
+            raise RuntimeError(
+                "Index must be trained/initialized before adding batches."
+            )
+
+        if embeddings.shape[0] != len(documents):
+            raise ValueError("Number of embeddings must match number of documents.")
+
+        # Normalize for cosine similarity
+        embeddings_to_add = embeddings.copy().astype(np.float32)
+        faiss.normalize_L2(embeddings_to_add)
+
+        self.index.add(embeddings_to_add)
+        self.documents.extend(documents)
+
     def build(
         self, embeddings: np.ndarray, documents: list[dict], index_type: str = "Flat"
     ) -> None:
@@ -278,31 +378,8 @@ class FAISSIndex:
             documents: List of document dictionaries
             index_type: Type of FAISS index to build ("Flat", "IVFFlat")
         """
-        if faiss is None:
-            raise ImportError("faiss is not installed.")
-
-        self.documents = documents
-        d = embeddings.shape[1]
-
-        # Normalize for cosine similarity (Inner Product on normalized vectors)
-        faiss.normalize_L2(embeddings)
-
-        if index_type == "Flat":
-            self.index = faiss.IndexFlatIP(d)
-        elif index_type == "IVFFlat":
-            # Heuristic for nlist
-            nlist = min(100, len(documents) // 40)
-            if nlist < 1:
-                nlist = 1
-            quantizer = faiss.IndexFlatIP(d)
-            self.index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            self.index.train(embeddings)
-        else:
-            raise ValueError(f"Unsupported index_type: {index_type}")
-
-        self.index.add(embeddings)
+        self.train(embeddings, index_type=index_type)
+        self.add_batch(embeddings, documents)
 
     def search(self, query_vector: np.ndarray, top_k: int = 50) -> list[dict]:
         """Search the index for nearest neighbors.
