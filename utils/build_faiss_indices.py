@@ -47,14 +47,16 @@ def build_indices(args):
 
             index = FAISSIndex()
             docs = df_laws[["citation", "text"]].to_dict("records")
+
+            logger.info("Building FAISS index for laws...")
             index.build(embeddings, docs)
 
             save_path = output_dir / "laws_faiss"
             index.save(save_path)
             logger.info(f"Laws FAISS index saved to {save_path}.faiss and .pkl")
 
-            # Clean up
-            del embeddings, docs, df_laws
+            # Clean up aggressively
+            del embeddings, docs, df_laws, texts
             gc.collect()
             if torch and torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -81,7 +83,9 @@ def build_indices(args):
                     current_chunk = chunk
 
                 texts = current_chunk["text"].fillna("").tolist()
-                logger.info(f"Encoding chunk of {len(texts)} court passages...")
+                logger.info(
+                    f"Encoding chunk of {len(texts)} court passages (Total processed: {row_count})..."
+                )
                 chunk_embeddings = embedder.encode(texts, is_query=False)
 
                 current_docs = current_chunk[["citation", "text"]].to_dict("records")
@@ -100,11 +104,17 @@ def build_indices(args):
                 index.add_batch(chunk_embeddings, current_docs)
                 row_count += len(current_chunk)
 
-                # Aggressive memory hygiene
+                # Aggressive memory hygiene: delete everything before next iteration
                 del chunk_embeddings, current_docs, current_chunk, texts
                 gc.collect()
                 if torch and torch.cuda.is_available():
                     torch.cuda.empty_cache()
+
+                # Report GPU usage if possible
+                if torch and torch.cuda.is_available():
+                    for i in range(torch.cuda.device_count()):
+                        mem = torch.cuda.memory_allocated(i) / 1024**3
+                        logger.info(f"GPU {i} memory allocated: {mem:.2f} GB")
 
                 if args.max_rows_courts and row_count >= args.max_rows_courts:
                     break

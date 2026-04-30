@@ -85,15 +85,20 @@ class MultilingualEmbedder:
         return model_name
 
     def _get_model_load_device(self) -> str:
-        """Return the device used for the parent process model instance."""
+        """Return the device used for the parent process model instance.
+
+        To avoid VRAM hoarding on cuda:0, the parent process model should
+        always stay on CPU when we intend to use multiple GPUs or a pool.
+        """
         devices = self._get_encode_devices()
 
-        if len(devices) > 1:
-            # Multi-process workers load/use the CUDA devices. Keep the parent
-            # model on CPU so it does not reserve memory on cuda:0 before
-            # spawning workers.
+        # If we have multiple GPUs or a pool is intended, keep parent on CPU
+        if len(devices) > 1 or self.pool is not None:
             return "cpu"
 
+        # If only one GPU is available, we might still want it on CPU in the
+        # parent process if we're going to use a single-worker pool (rare)
+        # but for now, we follow the devices list.
         return devices[0]
 
     def _get_encode_devices(self) -> list[str]:
@@ -101,10 +106,15 @@ class MultilingualEmbedder:
         if isinstance(self.device, list):
             return self.device
 
-        if self.device == "cuda" and torch is not None and torch.cuda.is_available():
+        if (
+            (self.device == "cuda" or self.device.startswith("cuda:"))
+            and torch is not None
+            and torch.cuda.is_available()
+        ):
             device_count = torch.cuda.device_count()
             if device_count > 1:
                 return [f"cuda:{idx}" for idx in range(device_count)]
+            return ["cuda:0"]
 
         return [self.device]
 
@@ -185,7 +195,10 @@ class MultilingualEmbedder:
         devices: list[str],
         show_progress: bool,
     ) -> np.ndarray:
-        """Encode using SentenceTransformers' native multi-process GPU pool."""
+        """Encode using SentenceTransformers' multi-process GPU pool.
+
+        Handles version differences between sentence-transformers 2.x and 3.x.
+        """
         pool_to_use = self.pool
         own_pool = False
 
@@ -199,6 +212,10 @@ class MultilingualEmbedder:
             own_pool = True
 
         try:
+            # For e5 models, we often need the prefix. Some versions of ST handle
+            # 'prompt' in encode/encode_multi_process, others don't.
+
+            # Strategy: Try the most modern API first (ST 3.0+)
             try:
                 return self.model.encode(
                     texts,
@@ -209,35 +226,38 @@ class MultilingualEmbedder:
                     pool=pool_to_use,
                     chunk_size=self.chunk_size,
                 )
-            except TypeError:
+            except (TypeError, AttributeError):
+                # Fallback to older encode_multi_process (ST 2.x)
                 if hasattr(self.model, "encode_multi_process"):
                     try:
+                        # Try with prompt
                         return self.model.encode_multi_process(
                             texts,
                             pool_to_use,
                             prompt=prefix,
                             batch_size=self.batch_size,
                             chunk_size=self.chunk_size,
-                            show_progress_bar=show_progress,
                         )
                     except TypeError:
+                        # Prompt not supported, prepend manually
                         prefixed_texts = [prefix + text for text in texts]
                         return self.model.encode_multi_process(
                             prefixed_texts,
                             pool_to_use,
                             batch_size=self.batch_size,
                             chunk_size=self.chunk_size,
-                            show_progress_bar=show_progress,
                         )
 
+                # Ultimate fallback - should not happen if pool is present
+                logger.warning(
+                    "Multi-process encoding failed. Falling back to single-process (CPU)."
+                )
                 prefixed_texts = [prefix + text for text in texts]
                 return self.model.encode(
                     prefixed_texts,
                     batch_size=self.batch_size,
                     show_progress_bar=show_progress,
                     convert_to_numpy=True,
-                    pool=pool_to_use,
-                    chunk_size=self.chunk_size,
                 )
         finally:
             if own_pool:
