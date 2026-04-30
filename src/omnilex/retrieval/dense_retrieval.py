@@ -56,14 +56,12 @@ class MultilingualEmbedder:
         else:
             self.device = list(device)
 
-        model_device = self._get_model_load_device()
-
         try:
-            self.model = SentenceTransformer(self.model_name, device=model_device)
+            # Force CPU to avoid VRAM hoarding on the main process
+            self.model = SentenceTransformer(self.model_name, device="cpu")
             logger.info(
-                "Loaded embedding model %s on %s; encode target device(s): %s",
+                "Loaded embedding model %s on CPU; encode target device(s): %s",
                 self.model_name,
-                model_device,
                 self._get_encode_devices(),
             )
         except Exception as e:

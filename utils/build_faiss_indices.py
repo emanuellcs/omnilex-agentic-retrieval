@@ -9,10 +9,30 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+# Ensure cuDF is disabled to prevent VRAM hoarding
+try:
+    if "cudf.pandas" in sys.modules or "cudf" in sys.modules:
+        import cudf.pandas
+
+        cudf.pandas.uninstall()
+        print("Explicitly uninstalled cudf.pandas")
+except Exception:
+    pass
+
 try:
     import torch
 except ImportError:
     torch = None
+
+
+def print_vram_usage(step: str):
+    """Log current VRAM allocation on cuda:0."""
+    if torch and torch.cuda.is_available():
+        # Sync to get accurate reading
+        torch.cuda.synchronize()
+        mem = torch.cuda.memory_allocated(0) / 1024**3
+        print(f"TELEMETRY: VRAM used after {step}: {mem:.2f} GB")
+
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -24,20 +44,25 @@ logger = logging.getLogger(__name__)
 
 
 def build_indices(args):
+    print_vram_usage("build_indices start")
     embedder = MultilingualEmbedder(
         model_name=args.model_name, batch_size=args.batch_size
     )
+    print_vram_usage("MultilingualEmbedder initialized")
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Start persistent pool for multiple GPUs
     embedder.start_multi_process_pool()
+    print_vram_usage("Multi-process pool started")
 
     try:
         # 1. Process Laws
         if args.laws_csv:
             logger.info(f"Processing laws from {args.laws_csv}")
             df_laws = pd.read_csv(args.laws_csv)
+            print_vram_usage("Laws CSV loaded")
             if args.max_rows_laws:
                 df_laws = df_laws.head(args.max_rows_laws)
 
@@ -46,6 +71,7 @@ def build_indices(args):
             embeddings = embedder.encode(texts, is_query=False)
 
             index = FAISSIndex()
+            print_vram_usage("Laws FAISSIndex initialized")
             docs = df_laws[["citation", "text"]].to_dict("records")
 
             logger.info("Building FAISS index for laws...")
@@ -66,11 +92,13 @@ def build_indices(args):
             logger.info(f"Processing courts from {args.courts_csv}")
 
             index = FAISSIndex()
+            print_vram_usage("Courts FAISSIndex initialized")
             is_trained = False
 
             # Load in chunks to avoid RAM OOM
             chunksize = 50000
             reader = pd.read_csv(args.courts_csv, chunksize=chunksize)
+            print_vram_usage("Courts CSV reader initialized")
 
             row_count = 0
             for chunk in tqdm(reader, desc="Processing court chunks"):
