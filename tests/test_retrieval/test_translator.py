@@ -1,20 +1,34 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
 
-# Mock transformers before importing QueryTranslator
+from omnilex.retrieval import translator
+from omnilex.retrieval.translator import QueryTranslator
+
 mock_transformers = MagicMock()
 mock_torch = MagicMock()
-
-with patch.dict(sys.modules, {"transformers": mock_transformers, "torch": mock_torch}):
-    from omnilex.retrieval.translator import QueryTranslator
 
 
 class TestQueryTranslator(unittest.TestCase):
     def setUp(self):
+        self.tokenizer_patch = patch.object(
+            translator,
+            "MarianTokenizer",
+            mock_transformers.MarianTokenizer,
+        )
+        self.model_patch = patch.object(
+            translator,
+            "MarianMTModel",
+            mock_transformers.MarianMTModel,
+        )
+        self.torch_patch = patch.object(translator, "torch", mock_torch)
+        self.tokenizer_patch.start()
+        self.model_patch.start()
+        self.torch_patch.start()
+
         # Reset mocks
         mock_transformers.reset_mock()
         mock_torch.reset_mock()
+        mock_torch.cuda.is_available.return_value = False
 
         # Manually reset side_effect and return_value as reset_mock doesn't do it
         mock_transformers.MarianTokenizer.from_pretrained.side_effect = None
@@ -30,6 +44,11 @@ class TestQueryTranslator(unittest.TestCase):
         mock_transformers.MarianMTModel.from_pretrained.return_value.to.return_value = (
             self.mock_model
         )
+
+    def tearDown(self):
+        self.torch_patch.stop()
+        self.model_patch.stop()
+        self.tokenizer_patch.stop()
 
     def test_init_with_mocks(self):
         translator = QueryTranslator()
