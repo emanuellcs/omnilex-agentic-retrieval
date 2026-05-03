@@ -2,7 +2,7 @@
 
 This repository contains the solution for the **[LLM Agentic Legal Information Retrieval](https://www.kaggle.com/competitions/llm-agentic-legal-information-retrieval)** Kaggle competition. The goal of this system is to retrieve the most relevant Swiss legal sources (statutes, court decisions) for an open-ended legal question in English, optimizing for the citation-level Macro F1 score on a hidden test set.
 
-## 🚀 Overview & Core Philosophy
+## Overview & Core Philosophy
 
 Our solution tackles the inherent challenges of cross-lingual legal retrieval (English queries to German/French/Italian texts) and the strict formatting requirements of legal citations by employing a robust, multi-stage pipeline.
 
@@ -11,7 +11,7 @@ The system is built on three core pillars:
 2.  **Structural Prior**: Utilizing the Swiss legal citation network as a graph-based prior to retrieve "forgotten" but highly relevant co-citations.
 3.  **Adversarial Decision-Making**: Deploying Large Language Models (LLMs) as expert agents debating the final inclusion set to maximize the set-based F1 score.
 
-## 🏗️ Multi-Stage Retrieval Pipeline
+## Multi-Stage Retrieval Pipeline
 
 The architecture is divided into four main stages, ensuring high recall initially and high precision at the end.
 
@@ -43,7 +43,7 @@ Designed for the "Most Creative" prize category, this approach utilizes the `goo
 2.  **The Devil's Advocate**: Challenges the reasoning and argues for exclusion.
 3.  **The Arbiter**: Simulating a strict Swiss law exam grader, it reads the debate and makes the final `INCLUDE`/`EXCLUDE` decision, penalizing both omissions and tangential additions.
 
-## 🛠️ Technical Stack
+## Technical Stack
 
 * **Retrieval**: `bm25s`, `faiss-cpu/gpu`
 * **NLP**: `sentence-transformers`, `transformers` (MarianMT), `torch`
@@ -51,7 +51,7 @@ Designed for the "Most Creative" prize category, this approach utilizes the `goo
 * **Agentic Framework**: Gemini 3.0 Flash Preview (`google-genai`)
 * **Data Parsing**: Chunked `pandas` loading to handle the 2.5GB+ judicial corpora
 
-## ⚙️ Configuration & Usage
+## Configuration & Usage
 
 The pipeline parameters can be modified via `config/pipeline_config.json`. The default settings are:
 
@@ -77,4 +77,4 @@ To ensure no pipeline errors compromise the Kaggle evaluation, run the validatio
 python utils/validate_submission.py submission.csv --verbose
 ```
 
-This guarantees the output conforms to the query_id,predicted_citations requirement.
+This guarantees the output conforms to the `query_id,predicted_citations` requirement.
